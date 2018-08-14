@@ -1,4 +1,5 @@
 import argparse
+from   datetime import datetime
 import logging
 import json
 
@@ -12,12 +13,14 @@ MEGA = 2 ** 20
 class HitBtcWebSocket(BaseWebSocket):
     PUBLIC_WS = "wss://api.hitbtc.com/api/2/ws"
 
-    def __init__(self, symbol, id=1):
+    # TODO: random id
+    def __init__(self, symbol, feed, id=1):
         super().__init__(
             self.PUBLIC_WS, thread_name=f"hitbtc_ws-{symbol}"
         )
         self._symbol = symbol
         self._id = id
+        self._feed = feed
 
 
     def __subscribe(self, method):
@@ -30,13 +33,12 @@ class HitBtcWebSocket(BaseWebSocket):
 
     def on_connection(self):
         super().on_connection()
-        self.__subscribe("subscribeOrderbook")
-        self.__subscribe("subscribeTrades")
+        self.__subscribe(f"subscribe{self._feed.capitalize()}")
 
 
 class HitBtcWSLogger(HitBtcWebSocket):
-    def __init__(self, symbol, filepath, id=1):
-        super().__init__(symbol, id=id)
+    def __init__(self, symbol, feed, filepath, id=1):
+        super().__init__(symbol, feed, id=id)
         self._filepath = filepath
         # TODO: tweak params
         self._logger = rotation_logger(
@@ -47,13 +49,18 @@ class HitBtcWSLogger(HitBtcWebSocket):
 
 
     def on_message(self, msg):
-        self._logger.info(msg)
+        record = {
+            "receive_time" : datetime.utcnow().isoformat(),
+            "raw" : msg
+        }
+        self._logger.info(record)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--symbol', required=True)
     parser.add_argument('--log_path', required=True)
+    parser.add_argument('--feed', required=True, help="orderbook, trade, etc.")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -61,5 +68,7 @@ if __name__ == "__main__":
         format='%(asctime)s - %(threadName)s [%(levelname)s] %(message)s'
     )
 
-    hitbtc_logger = HitBtcWSLogger(args.symbol, args.log_path)
+    hitbtc_logger = HitBtcWSLogger(
+        args.symbol, args.feed, args.log_path
+    )
     hitbtc_logger.start()

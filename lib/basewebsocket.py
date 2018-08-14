@@ -75,7 +75,7 @@ class BaseWebSocket:
                 self.on_error(e)
             else:
                 try:
-                    self.on_message(json.loads(data))
+                    self.on_message(data)
                 except Exception as e:
                     self.on_error(e)
 
