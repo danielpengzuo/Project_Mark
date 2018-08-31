@@ -1,8 +1,20 @@
-# TODO: use cdecimal to speed up
 from   decimal import Decimal
 
 from   enum import Enum
 from   sortedcontainers import SortedDict
+
+
+NaN = float('nan')
+
+
+# TODO: move to general func
+# TODO: try itertool version https://stackoverflow.com/a/3438986
+def pad_list(base, target_len, padding):
+    return base + [padding] * (target_len - len(base))
+
+
+def pad_list_front(base, target_len, padding):
+    return [padding] * (target_len - len(base)) + base
 
 
 class Side(Enum):
@@ -12,16 +24,22 @@ class Side(Enum):
 
 class Level2Orderbook:
     def __init__(self):
+        self.clear()
+
+
+    def clear(self):
         self._asks = SortedDict()
         self._bids = SortedDict()
 
 
     @staticmethod
     def _update_side(levels, price, size):
+        price = Decimal(price)
+        size = Decimal(size)
         if size == 0:
-            del levels[Decimal(price)]
+            del levels[price]
         else:
-            levels[Decimal(price)] = size
+            levels[price] = size
 
 
     @staticmethod
@@ -39,7 +57,7 @@ class Level2Orderbook:
 
 
     def update_bid(self, price, size):
-        Level2Orderbook._update_side(self._asks, price, size)
+        Level2Orderbook._update_side(self._bids, price, size)
 
 
     def get_level(self, side, price):
@@ -55,19 +73,48 @@ class Level2Orderbook:
         return Level2Orderbook._get_ask(self._bids, price)
 
 
-    # TODO: what to do if no asks?
     def best_ask(self):
-        return self._asks.items()[0]
+        """
+        :return:
+          A pair (best_ask_price, best_ask_size).
+          (NaN, NaN) if there is no ask at all.
+        """
+        try:
+            return self._asks.items()[0]
+        except IndexError:
+            return (NaN, NaN)
 
 
     def best_bid(self):
-        return self._bids.items()[0]
+        """
+        :return:
+          A pair (best_bid_price, best_bid_size).
+          (NaN, NaN) if there is no bid at all.
+        """
+        try:
+            return self._bids.items()[0]
+        except IndexError:
+            return (NaN, NaN)
 
 
-    # TODO: pad with NaN if depth not enough??
-    def best_asks(self, max_depth):
-        return self._asks.items()[:max_depth]
+    # TODO: doc padding
+    def best_asks(self, max_depth, padding=True):
+        asks = self._asks.items()[:max_depth]
+        if padding:
+            return pad_list(asks, max_depth, (NaN, 0))
+        else:
+            return asks
 
 
-    def best_bids(self, max_depth):
-        return self._bids.items()[:max_depth]
+    # TODO: reverse??
+    def best_bids(self, max_depth, padding=True):
+        bids = self._bids.items()[-max_depth:]
+        if padding:
+            return pad_list_front(bids, max_depth, (NaN, 0))
+        else:
+            return bids
+
+
+    @property
+    def depths(self):
+        return len(self._bids), len(self._asks)
