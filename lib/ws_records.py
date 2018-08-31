@@ -6,7 +6,10 @@ import logging
 import pandas as pd
 
 from   .level2_orderbook import Level2Orderbook
+from   .mktdata_serializer import DictCsvSerializer
 
+
+# TODO: parse_capture?
 def parse_record(line):
     line = ast.literal_eval(line)
     return {
@@ -15,44 +18,69 @@ def parse_record(line):
     }
 
 
-def load_hitbtc_trades(filename):
+class HitbtcTradeCaptureToCsv:
     """
-    (Just the new trades, not snapshots yet)
+    Encapsulates conversion logic + an environment for conversion stats.
     """
-    snapshot_cnt = 0
-    multiple_trade_cnt = 0
-    ack_cnt = 0
-    trades = []
-    for line in open(filename, 'r'):
-        struct = parse_record(line)
-        message = struct["message"]
+    FIELDS = ('recv_time', 'timestamp', 'id', 'price', 'quantity', 'side')
+    SERIALIZER = DictCsvSerializer(FIELDS)
+
+
+    def __init__(self):
+        self._snapshot_cnt = 0
+        self._multiple_trade_cnt = 0
+        self._ack_cnt = 0
+
+
+    def header(self):
+        return self.SERIALIZER.header()
+
+
+    def capture_to_csv_rows(self, capture):
+        message = capture["message"]
         if "method" not in message:
-            ack_cnt += 1
-            continue
+            self._ack_cnt += 1
+            return
         if message["method"] != "updateTrades":
             assert message["method"] == "snapshotTrades"
-            snapshot_cnt += 1
-            continue
+            self._snapshot_cnt += 1
+            return
         data = message["params"]["data"]
         if len(data) > 1:
-            multiple_trade_cnt += 1
-            continue
+            self._multiple_trade_cnt += 1
+            return
+        recv_time = capture["receive_time"].isoformat()
         for trade in data:
-            trade["recv_time"] = struct["receive_time"]
-            trades.append(trade)
-            
-        logging.info(f"Ack: {ack_cnt}")
-        logging.info(f"other methods: {snapshot_cnt}")
-        logging.info(f"more than one trade: {multiple_trade_cnt}")
+            trade["recv_time"] = recv_time
+            yield self.SERIALIZER.dict_to_row(trade)
 
-    trades = pd.DataFrame.from_records(trades)
-    return trades.astype(
-        {'price': float,
-         'quantity': float,
-         'recv_time': "datetime64[us]",
-         'timestamp' : "datetime64[us]"
-        }, copy=False
-    )
+
+    def conversion_stats(self):
+        return '\n'.join((
+            f"Ack: {ack_cnt}",
+            f"other methods: {snapshot_cnt}",
+            f"more than one trade: {multiple_trade_cnt}"
+        ))
+
+
+def trade_capture_files_to_csv_hitbtc(capture_files, csv_output):
+    if isinstance(capture_files, str):
+        capture_files = [ capture_files ]
+
+    conv = HitbtcTradeCaptureToCsv()
+
+    # helper
+    def get_csv_lines():
+        yield conv.header()
+        for capture_file in capture_files:
+            for line in open(capture_file, 'r'):
+                capture = parse_record(line)
+                yield from conv.capture_to_csv_rows(capture)
+
+    # TODO: add gzip
+    with open(csv_output, 'w') as output:
+        for line in get_csv_lines():
+            print(line, file=output)
 
 
 def _market_snapshot_cols(depth):
