@@ -1,6 +1,7 @@
 from pprint import pformat
 
 
+# TODO: refactor a dict summary layer
 def peek_json(jso, list_limit=2):
     """
     """
@@ -12,7 +13,7 @@ def peek_json(jso, list_limit=2):
 
     def _summarize_list(lst):
         if len(lst) > list_limit:
-            lst = lst[:2] + [ f'<{len(lst)} elements total...>' ]
+            lst = lst[:list_limit] + [ f'<{len(lst)} elements total...>' ]
         return [
             _summarize_json(element)
             for element in lst
